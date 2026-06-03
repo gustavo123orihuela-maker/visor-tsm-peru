@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Red de Monitoreo - TSM Perú</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="stationModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="cerrarModal()">&times;</span>
+            <h3 style="margin-top: 0;">Información de la estación de monitoreo</h3>
+            
+            <table class="info-table">
+                <tr><th>Nombre de estación</th><td id="info-nombre">Cargando...</td></tr>
+                <tr><th>Latitud</th><td id="info-lat">Cargando...</td></tr>
+                <tr><th>Longitud</th><td id="info-lon">Cargando...</td></tr>
+            </table>
+
+            <div class="chart-container">
+                <div class="chart-controls">
+                    <button id="btnResetZoom" class="control-btn" style="display: none;">Restablecer Zoom</button>
+                    
+                    <div class="export-menu">
+                        <button class="control-btn hamburger-btn">&#9776;</button>
+                        <div class="export-dropdown">
+                            <a href="#" id="exportPrint">Print chart</a>
+                            <hr>
+                            <a href="#" id="exportPNG">Download PNG image</a>
+                            <a href="#" id="exportJPEG">Download JPEG image</a>
+                            <a href="#" id="exportPDF">Download PDF document</a>
+                        </div>
+                    </div>
+                </div>
+
+                <canvas id="tsmChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <script src="js/app.js"></script>
+</body>
+</html>
