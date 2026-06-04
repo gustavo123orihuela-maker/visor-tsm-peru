@@ -1,6 +1,6 @@
 /**
- * js/app.js - Sistema completo de monitoreo regional
- * Versión restaurada con todas las funciones, validaciones y estructura detallada.
+ * js/app.js - Sistema GRASP de Monitoreo Regional
+ * Versión Final: TSM, SSM con Mapa de Calor (TXT), Zoom, Grillado y Eje X Multilínea.
  */
 
 // --- 1. CONFIGURACIÓN DEL MAPA ---
@@ -27,7 +27,7 @@ const estaciones = [
 // --- 3. VARIABLES DE ESTADO ---
 const modal = document.getElementById('stationModal');
 const btnResetZoom = document.getElementById('btnResetZoom');
-const OPACIDAD_FONDO = 0.6; // Opacidad definida para la paleta
+const OPACIDAD_FONDO = 0.6; // Opacidad definida para la paleta SSM
 
 let chartInstance = null;
 let globalData = { TSM: { fechas: [], valores: [] }, SSM: { fechas: [], valores: [] } };
@@ -35,18 +35,17 @@ let estacionActual = '';
 let currentTab = 'TSM';
 let paletaRGB = [];
 
-// --- 4. GESTIÓN DE PALETA DE COLORES ---
+// --- 4. GESTIÓN DE PALETA DE COLORES (TXT) ---
 async function cargarPaleta() {
     try {
         const response = await fetch("Paleta_colores/paleta_salinidad.txt");
         const texto = await response.text();
         
-        // Convertimos los datos normalizados (0-1) a formato RGBA para Chart.js
         paletaRGB = texto.split(/\r?\n/).filter(l => l.trim() !== '').map(l => {
             const rgb = l.trim().split(/\s+/).map(n => Math.floor(parseFloat(n) * 255));
             return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${OPACIDAD_FONDO})`;
         });
-        console.log("Paleta cargada exitosamente con opacidad:", OPACIDAD_FONDO);
+        console.log("Paleta cargada exitosamente.");
     } catch(e) {
         console.error("Error al cargar la paleta, usando esquema de respaldo:", e);
         paletaRGB = [`rgba(0,0,255,${OPACIDAD_FONDO})`, `rgba(255,0,0,${OPACIDAD_FONDO})`];
@@ -66,12 +65,10 @@ function abrirModal(estacion) {
     estacionActual = estacion.nombre;
     btnResetZoom.style.display = "none";
     
-    // Asignación de datos a tabla
     document.getElementById('info-nombre').innerText = estacion.nombre;
     document.getElementById('info-lat').innerText = estacion.lat;
     document.getElementById('info-lon').innerText = estacion.lon;
     
-    // Disparar carga de datos
     cargarDatosYGraficar(estacion);
 }
 
@@ -84,7 +81,6 @@ const pluginFondo = {
     id: 'fondoPersonalizado',
     beforeDraw: (chart) => {
         const { ctx, chartArea } = chart;
-        // Solo dibujamos fondo si es la pestaña SSM y hay colores
         if (!chartArea || currentTab !== 'SSM' || paletaRGB.length < 2) return;
         
         ctx.save();
@@ -97,26 +93,13 @@ const pluginFondo = {
     }
 };
 
-// Plugin para agregar marco/borde al área del gráfico
-const pluginMarco = {
-    id: 'marcoPersonalizado',
-    afterDatasetsDraw: (chart) => {
-        const { ctx, chartArea } = chart;
-        if (!chartArea) return;
-        
-        ctx.save();
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
-        ctx.restore();
-    }
-};
-
 function renderChart() {
     const ctx = document.getElementById('tsmChart').getContext('2d');
     
     // DESTRUCCIÓN DE INSTANCIA PREVIA PARA EVITAR SOLAPAMIENTO
     if (chartInstance) chartInstance.destroy();
+    
+    const isSSM = currentTab === 'SSM';
     
     chartInstance = new Chart(ctx, {
         type: 'line',
@@ -133,7 +116,7 @@ function renderChart() {
                 pointBackgroundColor: '#000000'
             }]
         },
-        plugins: [pluginFondo, pluginMarco],
+        plugins: [pluginFondo],
         options: {
             responsive: true,
             maintainAspectRatio: false,
@@ -147,67 +130,48 @@ function renderChart() {
                 }
             },
             scales: {
-                y: { 
-                    title: { 
-                        display: true, 
-                        text: 'Temperatura (°C)',
-                        font: { size: 12, weight: 'bold' }
-                    },
-                    min: currentTab === 'SSM' ? 25 : undefined, 
-                    max: currentTab === 'SSM' ? 36 : undefined,
-                    grid: {
-                        display: false  // Sin grillado
-                    }
-                },
-                x: { 
-                    title: { 
-                        display: true, 
-                        text: 'Meses',
-                        font: { size: 12, weight: 'bold' }
-                    },
-                    grid: {
-                        display: false  // Sin grillado
-                    },
+                x: {
+                    title: { display: true, text: 'Meses' },
                     ticks: {
-                        maxRotation: 0, 
-                        minRotation: 0,
-                        autoSkip: false,
-                        font: { size: 11 },
-                        callback: function(value, index, ticks) {
-                            const fecha = this.getLabelForValue(value);
-                            if (!fecha) return null;
+                        maxRotation: 0,
+                        autoSkip: false, // Forzamos a no borrar etiquetas automáticamente
+                        callback: function(val) {
+                            const f = this.getLabelForValue(val);
+                            if (!f) return null;
+                            const [y, m, d] = f.split('-');
                             
-                            const [anio, mes, dia] = fecha.split('-');
-                            const mesNum = parseInt(mes) - 1; 
-                            const nombresMeses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-                            
-                            // Primera etiqueta o cambio de mes
-                            if (index === 0) {
-                                return [nombresMeses[mesNum], anio];
+                            // Mostrar la etiqueta de texto solo si es el día 01
+                            if (d === '01') {
+                                const mesNom = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(m)-1];
+                                // ¡AQUÍ ESTÁ EL CAMBIO! 
+                                // Si es enero (01), devuelve un ARREGLO para forzar el salto de línea.
+                                // Si es cualquier otro mes, devuelve solo el string del mes.
+                                return (m === '01') ? [mesNom, y] : mesNom;
                             }
-                            
-                            const fechaAnterior = ticks[index - 1] ? this.getLabelForValue(ticks[index - 1].value) : null;
-                            if (!fechaAnterior) return null;
-                            
-                            const mesAnterior = fechaAnterior.split('-')[1];
-                            const anioAnterior = fechaAnterior.split('-')[0];
-                            
-                            // Si cambió el mes
-                            if (mes !== mesAnterior) {
-                                // Si es enero, mostrar mes y año
-                                if (mes === '01') {
-                                    return [nombresMeses[mesNum], anio];
+                            return null;
+                        }
+                    },
+                    grid: {
+                        display: true,
+                        drawOnChartArea: true,
+                        color: function(context) {
+                            if (context.chart.data.labels[context.index]) {
+                                const f = context.chart.data.labels[context.index];
+                                const dia = f.split('-')[2];
+                                // Solo dibujar la línea vertical gris si es el día 01 del mes
+                                if (dia === '01') {
+                                    return 'rgba(0, 0, 0, 0.1)'; 
                                 }
-                                // Si cambió de año, mostrar mes y año
-                                if (anio !== anioAnterior) {
-                                    return [nombresMeses[mesNum], anio];
-                                }
-                                // Otros meses, solo mostrar nombre
-                                return nombresMeses[mesNum];
                             }
-                            return null; 
+                            // Ocultar líneas para el resto de los días
+                            return 'transparent';
                         }
                     }
+                },
+                y: { 
+                    title: { display: true, text: isSSM ? 'Salinidad (UPS)' : 'Temperatura (°C)' },
+                    min: isSSM ? 25 : undefined, 
+                    max: isSSM ? 36 : undefined 
                 }
             }
         }
@@ -236,11 +200,13 @@ async function cargarDatosYGraficar(est) {
 function procesarHoja(d, c) {
     const f = [], v = [];
     for(let i=1; i<d.length; i++) {
-        // Validaciones detalladas de columnas y años
         if(d[i][c] !== undefined && d[i][1] >= 2025) {
-            // Formato seguro: YYYY-MM-DD
-            const fecha = `${String(d[i][1]).padStart(4, '0')}-${String(d[i][2]).padStart(2, '0')}-${String(d[i][7]).padStart(2, '0')}`;
-            f.push(fecha);
+            // Aseguramos formato estricto YYYY-MM-DD para el split del eje X
+            const anio = d[i][1];
+            const mes = String(d[i][2]).padStart(2, '0');
+            const dia = String(d[i][7]).padStart(2, '0');
+            
+            f.push(`${anio}-${mes}-${dia}`);
             v.push(parseFloat(d[i][c]));
         }
     }
