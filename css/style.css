@@ -99,12 +99,13 @@ body, html {
     position: relative; 
     height: 400px; 
     width: 100%; 
+    margin-top: 35px; /* Espacio extra arriba para liberar el botón */
 }
 
 /* --- Controles de Exportación y Zoom --- */
 .chart-controls {
     position: absolute;
-    top: 10px;
+    top: -35px; /* Sube el botón por encima del marco del gráfico */
     right: 20px;
     z-index: 10;
     display: flex;
