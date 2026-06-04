@@ -38,10 +38,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     paletaRGB = await cargarPaleta(OPACIDAD_FONDO);
     console.log("Sistema GRASP iniciado modularmente.");
     
+    // NUEVO CÓDIGO (Con círculos personalizados)
     estaciones.forEach(est => {
-        L.marker([est.lat, est.lon]).addTo(map)
-         .bindTooltip(est.nombre)
-         .on('click', () => abrirModal(est));
+        L.circleMarker([est.lat, est.lon], {
+            radius: 6,           // Tamaño del círculo
+            fillColor: "#ff0000", // Color de relleno (rojo en este caso)
+            color: "#ffffff",     // Color del borde (blanco)
+            weight: 2,           // Grosor del borde
+            fillOpacity: 0.8     // Opacidad del relleno (0 a 1)
+        }).addTo(map)
+        .bindTooltip(est.nombre, { direction: 'top', offset: [0, -5] }) // Tooltip un poco más arriba
+        .on('click', () => abrirModal(est));
     });
 });
 
