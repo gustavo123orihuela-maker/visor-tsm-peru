@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Red de Monitoreo - TSM Perú</title>
+    <title>Red de Monitoreo - TSM y SSM Perú</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -20,6 +20,11 @@
                 <tr><th>Latitud</th><td id="info-lat">Cargando...</td></tr>
                 <tr><th>Longitud</th><td id="info-lon">Cargando...</td></tr>
             </table>
+
+            <div class="tabs-container">
+                <button class="tab-btn active" id="tab-TSM" onclick="cambiarPestana('TSM')">TSM</button>
+                <button class="tab-btn" id="tab-SSM" onclick="cambiarPestana('SSM')">SSM</button>
+            </div>
 
             <div class="chart-container">
                 <div class="chart-controls">

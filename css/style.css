@@ -64,6 +64,36 @@ body, html {
     width: 30%; 
 }
 
+/* --- Pestañas (Tabs) --- */
+.tabs-container {
+    display: flex;
+    border-bottom: 1px solid #ddd;
+    margin-bottom: 15px;
+}
+
+.tab-btn {
+    background-color: #fff;
+    border: 1px solid transparent;
+    border-bottom: none;
+    padding: 10px 25px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #007bff;
+    outline: none;
+}
+
+.tab-btn:hover {
+    background-color: #f8f9fa;
+}
+
+.tab-btn.active {
+    border: 1px solid #ddd;
+    border-bottom: 1px solid #fff;
+    color: #333;
+    font-weight: bold;
+    margin-bottom: -1px; 
+}
+
 /* Contenedor del gráfico */
 .chart-container { 
     position: relative; 

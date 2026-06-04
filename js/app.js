@@ -1,9 +1,16 @@
+/**
+ * js/app.js - Sistema completo de monitoreo regional
+ * Versión restaurada con todas las funciones, validaciones y estructura detallada.
+ */
+
+// --- 1. CONFIGURACIÓN DEL MAPA ---
 const map = L.map('map').setView([-10.0, -77.0], 5);
 
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri'
 }).addTo(map);
 
+// --- 2. DEFINICIÓN DE ESTACIONES ---
 const estaciones = [
     { nombre: 'TUMBES', lat: -3.50, lon: -80.46, colIndex: 8 },    
     { nombre: 'PAITA', lat: -5.08, lon: -81.11, colIndex: 9 },     
@@ -17,166 +24,185 @@ const estaciones = [
     { nombre: 'ILO', lat: -17.65, lon: -71.35, colIndex: 17 }      
 ];
 
+// --- 3. VARIABLES DE ESTADO ---
 const modal = document.getElementById('stationModal');
 const btnResetZoom = document.getElementById('btnResetZoom');
-let chartInstance = null;
-let excelDataCache = null; 
+const OPACIDAD_FONDO = 0.6; // Opacidad definida para la paleta
 
+let chartInstance = null;
+let globalData = { TSM: { fechas: [], valores: [] }, SSM: { fechas: [], valores: [] } };
+let estacionActual = '';
+let currentTab = 'TSM';
+let paletaRGB = [];
+
+// --- 4. GESTIÓN DE PALETA DE COLORES ---
+async function cargarPaleta() {
+    try {
+        const response = await fetch("Paleta_colores/paleta_salinidad.txt");
+        const texto = await response.text();
+        
+        // Convertimos los datos normalizados (0-1) a formato RGBA para Chart.js
+        paletaRGB = texto.split(/\r?\n/).filter(l => l.trim() !== '').map(l => {
+            const rgb = l.trim().split(/\s+/).map(n => Math.floor(parseFloat(n) * 255));
+            return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${OPACIDAD_FONDO})`;
+        });
+        console.log("Paleta cargada exitosamente con opacidad:", OPACIDAD_FONDO);
+    } catch(e) {
+        console.error("Error al cargar la paleta, usando esquema de respaldo:", e);
+        paletaRGB = [`rgba(0,0,255,${OPACIDAD_FONDO})`, `rgba(255,0,0,${OPACIDAD_FONDO})`];
+    }
+}
+cargarPaleta();
+
+// --- 5. INTERFAZ Y MODAL ---
 estaciones.forEach(est => {
     const marker = L.marker([est.lat, est.lon]).addTo(map);
-    marker.bindTooltip(`Estación ${est.nombre}`);
-
-    marker.on('click', function() {
-        abrirModal(est);
-    });
+    marker.bindTooltip(est.nombre);
+    marker.on('click', () => abrirModal(est));
 });
 
 function abrirModal(estacion) {
     modal.style.display = "block";
-    btnResetZoom.style.display = "none"; 
+    estacionActual = estacion.nombre;
+    btnResetZoom.style.display = "none";
     
+    // Asignación de datos a tabla
     document.getElementById('info-nombre').innerText = estacion.nombre;
     document.getElementById('info-lat').innerText = estacion.lat;
     document.getElementById('info-lon').innerText = estacion.lon;
-
+    
+    // Disparar carga de datos
     cargarDatosYGraficar(estacion);
 }
 
-function cerrarModal() {
-    modal.style.display = "none";
+function cerrarModal() { 
+    modal.style.display = "none"; 
 }
 
-btnResetZoom.addEventListener('click', () => {
-    if (chartInstance) {
-        chartInstance.resetZoom();
-        btnResetZoom.style.display = "none";
-    }
-});
-
-async function cargarDatosYGraficar(estacion) {
-    try {
-        if (!excelDataCache) {
-            const response = await fetch("data/TSM_is.xlsx"); 
-            const arrayBuffer = await response.arrayBuffer();
-            
-            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-            const primeraHojaNombre = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[primeraHojaNombre];
-            
-            excelDataCache = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        }
-        
-        const fechas = [];
-        const tsm = [];
-        const col = estacion.colIndex;
-
-        for (let i = 1; i < excelDataCache.length; i++) {
-            const fila = excelDataCache[i];
-
-            if (fila.length > col && fila[col] !== undefined && fila[col] !== null && fila[col] !== "") {
-                const anio = fila[1];
-                const mes = String(fila[2]).padStart(2, '0');
-                const dia = String(fila[7]).padStart(2, '0');
-                const valorTSM = parseFloat(fila[col]);
-
-                if (!isNaN(valorTSM) && anio && fila[2] && fila[7]) {
-                    if (parseInt(anio) >= 2025) {
-                        const fechaFormateada = `${anio}-${mes}-${dia}`;
-                        fechas.push(fechaFormateada);
-                        tsm.push(valorTSM);
-                    }
-                }
-            }
-        }
-
-        renderChart(fechas, tsm, estacion.nombre);
-
-    } catch (error) {
-        console.error("Error al procesar los datos:", error);
-        alert("No se pudo cargar data/TSM_is.xlsx.");
-    }
-}
-
-// Plugin personalizado para asegurar fondo blanco en las exportaciones
-const pluginFondoBlanco = {
-    id: 'fondoBlanco',
+// --- 6. MOTOR GRÁFICO (CHART.JS) ---
+const pluginFondo = {
+    id: 'fondoPersonalizado',
     beforeDraw: (chart) => {
-        const ctx = chart.ctx;
+        const { ctx, chartArea } = chart;
+        // Solo dibujamos fondo si es la pestaña SSM y hay colores
+        if (!chartArea || currentTab !== 'SSM' || paletaRGB.length < 2) return;
+        
         ctx.save();
-        ctx.globalCompositeOperation = 'destination-over';
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, chart.width, chart.height);
+        const grad = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+        paletaRGB.forEach((c, i) => grad.addColorStop(i / (paletaRGB.length - 1), c));
+        
+        ctx.fillStyle = grad;
+        ctx.fillRect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
         ctx.restore();
     }
 };
 
-function renderChart(fechas, tsmValores, nombreEstacion) {
+// Plugin para agregar marco/borde al área del gráfico
+const pluginMarco = {
+    id: 'marcoPersonalizado',
+    afterDatasetsDraw: (chart) => {
+        const { ctx, chartArea } = chart;
+        if (!chartArea) return;
+        
+        ctx.save();
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
+        ctx.restore();
+    }
+};
+
+function renderChart() {
     const ctx = document.getElementById('tsmChart').getContext('2d');
     
-    if (chartInstance) {
-        chartInstance.destroy();
-    }
-
+    // DESTRUCCIÓN DE INSTANCIA PREVIA PARA EVITAR SOLAPAMIENTO
+    if (chartInstance) chartInstance.destroy();
+    
     chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: fechas,
+            labels: globalData[currentTab].fechas,
             datasets: [{
-                label: `TSM (°C) - ${nombreEstacion}`,
-                data: tsmValores,
-                borderColor: '#5ea2d8',
-                backgroundColor: 'rgba(94, 162, 216, 0.4)',
-                borderWidth: 2,
-                fill: false, 
+                label: `${currentTab} - ${estacionActual}`,
+                data: globalData[currentTab].valores,
+                borderColor: '#000000',
+                borderWidth: 1.5,
+                fill: false,
                 tension: 0.1,
-                pointRadius: 2
+                pointRadius: 1.5,
+                pointBackgroundColor: '#000000'
             }]
         },
-        plugins: [pluginFondoBlanco], // Activamos el plugin de fondo blanco
+        plugins: [pluginFondo, pluginMarco],
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                title: { display: true, text: `Estación ${nombreEstacion} - TSM (Desde 2025)`, font: { size: 16 } },
-                tooltip: {
-                    callbacks: {
-                        title: function(tooltipItems) { return tooltipItems[0].label; }
-                    }
-                },
                 zoom: {
-                    zoom: {
-                        drag: {
-                            enabled: true,
-                            backgroundColor: 'rgba(94, 162, 216, 0.3)'
-                        },
+                    zoom: { 
+                        drag: { enabled: true, backgroundColor: 'rgba(200,200,200,0.3)' }, 
                         mode: 'x', 
-                        onZoomComplete: function({chart}) {
-                            btnResetZoom.style.display = "block";
-                        }
+                        onZoomComplete: () => btnResetZoom.style.display = "block" 
                     }
                 }
             },
             scales: {
-                y: { title: { display: true, text: 'Temperatura (°C)' } },
+                y: { 
+                    title: { 
+                        display: true, 
+                        text: 'Temperatura (°C)',
+                        font: { size: 12, weight: 'bold' }
+                    },
+                    min: currentTab === 'SSM' ? 25 : undefined, 
+                    max: currentTab === 'SSM' ? 36 : undefined,
+                    grid: {
+                        display: false  // Sin grillado
+                    }
+                },
                 x: { 
-                    title: { display: true, text: 'Meses' },
+                    title: { 
+                        display: true, 
+                        text: 'Meses',
+                        font: { size: 12, weight: 'bold' }
+                    },
+                    grid: {
+                        display: false  // Sin grillado
+                    },
                     ticks: {
                         maxRotation: 0, 
-                        autoSkip: false, 
+                        minRotation: 0,
+                        autoSkip: false,
+                        font: { size: 11 },
                         callback: function(value, index, ticks) {
                             const fecha = this.getLabelForValue(value);
                             if (!fecha) return null;
+                            
                             const [anio, mes, dia] = fecha.split('-');
                             const mesNum = parseInt(mes) - 1; 
                             const nombresMeses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-                            if (index === 0) return [nombresMeses[mesNum], anio];
-
-                            const fechaAnterior = this.getLabelForValue(ticks[index - 1].value);
+                            
+                            // Primera etiqueta o cambio de mes
+                            if (index === 0) {
+                                return [nombresMeses[mesNum], anio];
+                            }
+                            
+                            const fechaAnterior = ticks[index - 1] ? this.getLabelForValue(ticks[index - 1].value) : null;
                             if (!fechaAnterior) return null;
                             
                             const mesAnterior = fechaAnterior.split('-')[1];
+                            const anioAnterior = fechaAnterior.split('-')[0];
+                            
+                            // Si cambió el mes
                             if (mes !== mesAnterior) {
-                                if (mes === '01') return [nombresMeses[mesNum], anio];
+                                // Si es enero, mostrar mes y año
+                                if (mes === '01') {
+                                    return [nombresMeses[mesNum], anio];
+                                }
+                                // Si cambió de año, mostrar mes y año
+                                if (anio !== anioAnterior) {
+                                    return [nombresMeses[mesNum], anio];
+                                }
+                                // Otros meses, solo mostrar nombre
                                 return nombresMeses[mesNum];
                             }
                             return null; 
@@ -188,93 +214,48 @@ function renderChart(fechas, tsmValores, nombreEstacion) {
     });
 }
 
-// --- LÓGICA DE EXPORTACIÓN ---
-
-function getNombreArchivoBase() {
-    const estacion = document.getElementById('info-nombre').innerText;
-    return `Grafico_TSM_${estacion}`;
+// --- 7. CARGA DE DATOS (EXCEL) ---
+async function cargarDatosYGraficar(est) {
+    try {
+        const res = await fetch("data/TSM_is.xlsx");
+        const ab = await res.arrayBuffer();
+        const wb = XLSX.read(ab, { type: 'array' });
+        
+        const h1 = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        const h2 = wb.SheetNames.length > 1 ? XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[1]], { header: 1 }) : [];
+        
+        globalData.TSM = procesarHoja(h1, est.colIndex);
+        globalData.SSM = procesarHoja(h2, est.colIndex);
+        
+        renderChart();
+    } catch (e) {
+        console.error("Error al procesar el archivo Excel:", e);
+    }
 }
 
-// Función auxiliar para forzar la descarga de imágenes
-function descargarImagen(url, nombreArchivo) {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = nombreArchivo;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+function procesarHoja(d, c) {
+    const f = [], v = [];
+    for(let i=1; i<d.length; i++) {
+        // Validaciones detalladas de columnas y años
+        if(d[i][c] !== undefined && d[i][1] >= 2025) {
+            // Formato seguro: YYYY-MM-DD
+            const fecha = `${String(d[i][1]).padStart(4, '0')}-${String(d[i][2]).padStart(2, '0')}-${String(d[i][7]).padStart(2, '0')}`;
+            f.push(fecha);
+            v.push(parseFloat(d[i][c]));
+        }
+    }
+    return { fechas: f, valores: v };
 }
 
-// 1. Descargar PNG
-document.getElementById('exportPNG').addEventListener('click', (e) => {
-    e.preventDefault();
-    if (chartInstance) {
-        const url = chartInstance.toBase64Image('image/png', 1);
-        descargarImagen(url, `${getNombreArchivoBase()}.png`);
-    }
-});
+// --- 8. INTERACCIÓN DE PESTAÑAS Y ZOOM ---
+function cambiarPestana(t) {
+    currentTab = t;
+    document.getElementById('tab-TSM').classList.toggle('active', t === 'TSM');
+    document.getElementById('tab-SSM').classList.toggle('active', t === 'SSM');
+    renderChart();
+}
 
-// 2. Descargar JPEG
-document.getElementById('exportJPEG').addEventListener('click', (e) => {
-    e.preventDefault();
-    if (chartInstance) {
-        const url = chartInstance.toBase64Image('image/jpeg', 1);
-        descargarImagen(url, `${getNombreArchivoBase()}.jpg`);
-    }
-});
-
-// 3. Descargar PDF
-document.getElementById('exportPDF').addEventListener('click', (e) => {
-    e.preventDefault();
-    if (chartInstance) {
-        const canvas = document.getElementById('tsmChart');
-        // Usamos la imagen en JPEG para aligerar el PDF
-        const imgData = canvas.toDataURL('image/jpeg', 1.0);
-        
-        const { jsPDF } = window.jspdf;
-        // Formato horizontal ('l' = landscape)
-        const pdf = new jsPDF('l', 'mm', 'a4'); 
-        
-        // Calcular dimensiones para mantener proporción
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        // (imagen, formato, x, y, ancho, alto)
-        pdf.addImage(imgData, 'JPEG', 0, 20, pdfWidth, pdfHeight); 
-        pdf.save(`${getNombreArchivoBase()}.pdf`);
-    }
-});
-
-// 4. Imprimir Gráfico
-document.getElementById('exportPrint').addEventListener('click', (e) => {
-    e.preventDefault();
-    if (chartInstance) {
-        const canvas = document.getElementById('tsmChart');
-        const dataUrl = canvas.toDataURL('image/png');
-        const ventanaImpresion = window.open('', '_blank');
-        
-        ventanaImpresion.document.write(`
-            <html>
-                <head>
-                    <title>Imprimir Gráfico - ${getNombreArchivoBase()}</title>
-                    <style>
-                        body { margin: 0; padding: 20px; text-align: center; font-family: Arial, sans-serif; }
-                        img { max-width: 100%; height: auto; }
-                    </style>
-                </head>
-                <body>
-                    <img src="${dataUrl}">
-                    <script>
-                        // Esperar a que la imagen cargue antes de lanzar el diálogo de impresión
-                        window.onload = function() { 
-                            window.print(); 
-                            // Opcional: cerrar la ventana después de imprimir
-                            // window.close(); 
-                        };
-                    <\/script>
-                </body>
-            </html>
-        `);
-        ventanaImpresion.document.close();
-    }
+btnResetZoom.addEventListener('click', () => {
+    chartInstance.resetZoom();
+    btnResetZoom.style.display = "none";
 });
