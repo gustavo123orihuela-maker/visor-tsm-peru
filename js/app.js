@@ -1,9 +1,7 @@
-// --- js/app.js ---
-
 import { cargarPaleta, cargarDatosExcel } from './funciones/datos.js';
-import { dibujarGrafico, resetearZoom } from './funciones/grafico.js';
+import { dibujarGrafico, resetearZoom, exportarGrafico } from './funciones/grafico.js';
 
-// 1. CONFIGURACIÓN DEL MAPA
+// --- 1. CONFIGURACIÓN DEL MAPA ---
 const map = L.map('map').setView([-10.0, -77.0], 5);
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri'
@@ -22,7 +20,7 @@ const estaciones = [
     { nombre: 'ILO', lat: -17.65, lon: -71.35, colIndex: 17 }      
 ];
 
-// 2. VARIABLES DEL DOM Y ESTADO GLOBAL
+// --- 2. VARIABLES GLOBALES ---
 const modal = document.getElementById('stationModal');
 const btnResetZoom = document.getElementById('btnResetZoom');
 const ctxChart = document.getElementById('tsmChart').getContext('2d');
@@ -33,26 +31,24 @@ let estacionActual = '';
 let currentTab = 'TSM';
 let paletaRGB = [];
 
-// 3. INICIALIZACIÓN
+// --- 3. INICIALIZACIÓN ---
 document.addEventListener('DOMContentLoaded', async () => {
     paletaRGB = await cargarPaleta(OPACIDAD_FONDO);
-    console.log("Sistema GRASP iniciado modularmente.");
     
-    // NUEVO CÓDIGO (Con círculos personalizados)
     estaciones.forEach(est => {
         L.circleMarker([est.lat, est.lon], {
-            radius: 6,           // Tamaño del círculo
-            fillColor: "#ff0000", // Color de relleno (rojo en este caso)
-            color: "#ffffff",     // Color del borde (blanco)
-            weight: 2,           // Grosor del borde
-            fillOpacity: 0.8     // Opacidad del relleno (0 a 1)
+            radius: 6,
+            fillColor: "#ff0000",
+            color: "#ffffff",
+            weight: 2,
+            fillOpacity: 0.8
         }).addTo(map)
-        .bindTooltip(est.nombre, { direction: 'top', offset: [0, -5] }) // Tooltip un poco más arriba
-        .on('click', () => abrirModal(est));
+          .bindTooltip(est.nombre, { direction: 'top', offset: [0, -5] })
+          .on('click', () => abrirModal(est));
     });
 });
 
-// 4. FUNCIONES DE INTERFAZ
+// --- 4. LÓGICA DE INTERFAZ ---
 async function abrirModal(estacion) {
     modal.style.display = "block";
     estacionActual = estacion.nombre;
@@ -74,7 +70,7 @@ function actualizarGraficoVisual() {
     dibujarGrafico(ctxChart, globalData, estacionActual, currentTab, paletaRGB, btnResetZoom);
 }
 
-// 5. EXPOSICIÓN AL ENTORNO GLOBAL (Para botones en HTML)
+// --- 5. EXPOSICIÓN AL HTML (La solución a tu error) ---
 window.cerrarModal = function() {
     modal.style.display = "none";
 };
@@ -84,6 +80,11 @@ window.cambiarPestana = function(t) {
     document.getElementById('tab-TSM').classList.toggle('active', t === 'TSM');
     document.getElementById('tab-SSM').classList.toggle('active', t === 'SSM');
     actualizarGraficoVisual();
+};
+
+window.exportar = function(evento, formato) {
+    evento.preventDefault(); // Evita que la página salte
+    exportarGrafico(formato, estacionActual, currentTab);
 };
 
 btnResetZoom.addEventListener('click', () => {

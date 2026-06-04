@@ -33,11 +33,11 @@
                     <div class="export-menu">
                         <button class="control-btn hamburger-btn">&#9776;</button>
                         <div class="export-dropdown">
-                            <a href="#" id="exportPrint">Print chart</a>
+                            <a href="#" id="exportPrint" onclick="exportar(event, 'print')">Print chart</a>
                             <hr>
-                            <a href="#" id="exportPNG">Download PNG image</a>
-                            <a href="#" id="exportJPEG">Download JPEG image</a>
-                            <a href="#" id="exportPDF">Download PDF document</a>
+                            <a href="#" id="exportPNG" onclick="exportar(event, 'png')">Download PNG image</a>
+                            <a href="#" id="exportJPEG" onclick="exportar(event, 'jpeg')">Download JPEG image</a>
+                            <a href="#" id="exportPDF" onclick="exportar(event, 'pdf')">Download PDF document</a>
                         </div>
                     </div>
                 </div>
