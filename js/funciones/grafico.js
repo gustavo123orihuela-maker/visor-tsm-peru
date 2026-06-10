@@ -15,11 +15,11 @@ export function dibujarGrafico(ctx, data, estacionActual, currentTab, paletaRGB,
             const { ctx, width, height, chartArea } = chart;
             ctx.save();
             
-            // 1. FONDO BLANCO GLOBAL (Asegura que el PNG/JPEG/PDF no sea transparente ni negro)
+            // FONDO BLANCO PURO PARA EVITAR TRANSPARENCIAS EN EXPORTACIÓN
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, width, height);
             
-            // 2. MAPA DE CALOR (Solo para SSM y dentro del área del gráfico)
+            // MAPA DE CALOR
             if (chartArea && currentTab === 'SSM' && paletaRGB.length > 2) {
                 const grad = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
                 paletaRGB.forEach((c, i) => grad.addColorStop(i / (paletaRGB.length - 1), c));
@@ -108,53 +108,64 @@ export function dibujarGrafico(ctx, data, estacionActual, currentTab, paletaRGB,
     });
 }
 
-// --- FUNCIÓN DE EXPORTACIÓN EN ALTA CALIDAD (600 DPI) ---
+// --- EXPORTACIÓN CON SINCRONIZACIÓN DE RENDERIZADO ---
 export function exportarGrafico(formato, estacionActual, currentTab) {
     if (!chartInstance) return;
 
     const canvas = document.getElementById('tsmChart');
+    const contenedor = canvas.parentElement; 
     const nombreArchivo = `${currentTab}_${estacionActual}`;
 
-    // 1. TRUCO DE RESOLUCIÓN: Guardamos la escala actual y la forzamos a 6x (Aprox 600 DPI)
-    const originalRatio = chartInstance.options.devicePixelRatio || window.devicePixelRatio;
-    chartInstance.options.devicePixelRatio = 6; 
-    chartInstance.update('none'); // Actualizamos el gráfico sin animaciones
-
-    // 2. CAPTURAMOS LA IMAGEN EN ALTA RESOLUCIÓN
-    // Usamos el formato adecuado (JPEG se verá bien ahora porque el fondo es blanco)
-    const mimeType = formato === 'jpeg' ? 'image/jpeg' : 'image/png';
-    const dataUrl = canvas.toDataURL(mimeType, 1.0);
-
-    // 3. PROCESAMOS LA DESCARGA SEGÚN LA OPCIÓN ELEGIDA
+    // Paso previo para navegadores estrictos: abrimos la ventana de impresión al instante
+    let ventanaImpresion = null;
     if (formato === 'print') {
-        const ventana = window.open('', '', 'width=1000,height=700');
-        ventana.document.write(`<html><head><title>Imprimir - ${nombreArchivo}</title></head><body style="text-align:center; padding: 20px;"><img src="${dataUrl}" style="max-width:100%; height:auto;"></body></html>`);
-        ventana.document.close();
-        ventana.focus();
-        setTimeout(() => { ventana.print(); ventana.close(); }, 500); // 500ms para asegurar que la imagen pesada cargue
-        
-    } else if (formato === 'pdf') {
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ orientation: "landscape" });
-        const imgProps = pdf.getImageProperties(dataUrl);
-        // Margen de 10 unidades a cada lado
-        const pdfWidth = pdf.internal.pageSize.getWidth() - 20; 
-        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-        
-        // Centramos verticalmente si es necesario, o lo ponemos desde arriba
-        pdf.addImage(dataUrl, formato === 'jpeg' ? 'JPEG' : 'PNG', 10, 15, pdfWidth, pdfHeight);
-        pdf.save(`${nombreArchivo}.pdf`);
-        
-    } else {
-        // PNG o JPEG directo
-        const enlace = document.createElement('a');
-        enlace.download = `${nombreArchivo}.${formato}`;
-        enlace.href = dataUrl;
-        enlace.click();
+        ventanaImpresion = window.open('', '', 'width=1000,height=700');
+        ventanaImpresion.document.write('<html><body style="font-family:sans-serif; text-align:center; padding-top:20%;"><h2>Preparando gráfico en alta definición...</h2></body></html>');
     }
 
-    // 4. RESTAURAMOS LA RESOLUCIÓN NORMAL
-    // Esto es crucial para que al cerrar el modal tu web no consuma memoria de más
-    chartInstance.options.devicePixelRatio = originalRatio;
+    // 1. Congelamos el tamaño CSS para que el gráfico no salte en la pantalla
+    contenedor.style.width = contenedor.clientWidth + 'px';
+    contenedor.style.height = contenedor.clientHeight + 'px';
+
+    // 2. Multiplicamos la resolución interna del canvas (4x es ideal para calidad de tesis sin colapsar la RAM)
+    const originalRatio = chartInstance.options.devicePixelRatio || window.devicePixelRatio;
+    chartInstance.options.devicePixelRatio = 4;
     chartInstance.update('none');
+
+    // 3. Pausa de 300ms. Le damos tiempo al procesador para redibujar en 4x antes de tomar la captura
+    setTimeout(() => {
+        const mimeType = formato === 'jpeg' ? 'image/jpeg' : 'image/png';
+        const dataUrl = canvas.toDataURL(mimeType, 1.0);
+
+        if (formato === 'print') {
+            ventanaImpresion.document.open();
+            ventanaImpresion.document.write(`<html><head><title>Imprimir - ${nombreArchivo}</title></head><body style="text-align:center; padding: 20px;"><img src="${dataUrl}" style="max-width:100%; height:auto;"></body></html>`);
+            ventanaImpresion.document.close();
+            ventanaImpresion.focus();
+            setTimeout(() => { ventanaImpresion.print(); ventanaImpresion.close(); }, 500);
+            
+        } else if (formato === 'pdf') {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({ orientation: "landscape" });
+            const imgProps = pdf.getImageProperties(dataUrl);
+            const pdfWidth = pdf.internal.pageSize.getWidth() - 20; 
+            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+            
+            pdf.addImage(dataUrl, formato === 'jpeg' ? 'JPEG' : 'PNG', 10, 15, pdfWidth, pdfHeight);
+            pdf.save(`${nombreArchivo}.pdf`);
+            
+        } else {
+            const enlace = document.createElement('a');
+            enlace.download = `${nombreArchivo}.${formato}`;
+            enlace.href = dataUrl;
+            enlace.click();
+        }
+
+        // 4. Restauramos todo a la normalidad para que la página siga siendo rápida
+        chartInstance.options.devicePixelRatio = originalRatio;
+        chartInstance.update('none');
+        contenedor.style.width = '100%';
+        contenedor.style.height = '400px';
+
+    }, 300);
 }
